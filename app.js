@@ -37,37 +37,42 @@ async function fetchData() {
     } catch (e) { console.error(e); }
 }
 
+// HELPER: Format Date as YYYY-MM-DD using LOCAL time (not UTC)
+function getLocalDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 // --- RENDER LOGIC ---
 
 function renderTasksForDate(dateObj) {
-    const dateStr = dateObj.toISOString().split('T')[0];
+    // FIX: Use local date string instead of toISOString()
+    const dateStr = getLocalDateString(dateObj);
     
-    // 1. Update Title
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Update Title
+    const todayStr = getLocalDateString(new Date());
     if (dateStr === todayStr) selectedDateTitle.innerText = "Today's Tasks";
     else selectedDateTitle.innerText = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
     habitList.innerHTML = '';
 
-    // 2. Filter Habits for this Date
     const dailyHabits = habits.filter(h => {
-        if (h.targetDate) return h.targetDate === dateStr; // Specific date match
-        return h.freq === 'Daily'; // Daily recurrence
+        if (h.targetDate) return h.targetDate === dateStr; 
+        return h.freq === 'Daily'; 
     });
 
     taskCountLabel.innerText = `${dailyHabits.length} Tasks`;
 
-    // --- NEW CODE: CALCULATE PERCENTAGE ---
+    // Stats Calculation
     const completedCount = dailyHabits.filter(h => 
         logs.some(l => l.habitId === h.id && l.date.substring(0,10) === dateStr)
     ).length;
 
     const totalCount = dailyHabits.length;
     const percent = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
-    
-    // Update the HTML element
     document.getElementById('total-completions').innerText = `${percent}%`;
-    // --------------------------------------
 
     if(dailyHabits.length === 0) {
         habitList.innerHTML = `<div style="text-align:center; color:#999; margin-top:40px;">No tasks for this day.</div>`;
@@ -101,37 +106,30 @@ function renderCalendar() {
     
     monthYearLabel.innerText = currentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-    // Days in month
     const firstDayIndex = new Date(year, month, 1).getDay();
     const lastDay = new Date(year, month + 1, 0).getDate();
 
-    // Empty slots for previous month
+    // Empty slots
     for (let i = 0; i < firstDayIndex; i++) {
-        const div = document.createElement('div');
-        calendarGrid.appendChild(div);
+        calendarGrid.appendChild(document.createElement('div'));
     }
 
-    // Days
-    const todayStr = new Date().toISOString().split('T')[0];
-    const selectedStr = selectedDate.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(new Date());
+    const selectedStr = getLocalDateString(selectedDate);
 
     for (let i = 1; i <= lastDay; i++) {
-        const dateStr = new Date(year, month, i).toISOString().split('T')[0]; // Adjust timezone in real app
-        // Correct date string construction to avoid timezone off-by-one errors
-        const currentLoopDate = new Date(year, month, i);
-        const loopDateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
-        
         const div = document.createElement('div');
         div.className = 'day-cell';
         div.innerText = i;
 
-        // Highlight Today
+        // FIX: Manually build string to avoid Timezone shifts
+        // Note: Months are 0-indexed in JS (0 = Jan), but 1-indexed in strings (01 = Jan)
+        const loopDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+
         if (loopDateStr === todayStr) div.classList.add('today');
-        
-        // Highlight Selected
         if (loopDateStr === selectedStr) div.classList.add('active');
 
-        // Check if any tasks exist for this day (Green Dot)
+        // Dot indicator logic
         const hasTasks = habits.some(h => h.targetDate === loopDateStr);
         if (hasTasks) {
             const dot = document.createElement('div');
@@ -140,8 +138,9 @@ function renderCalendar() {
         }
 
         div.onclick = () => {
-            selectedDate = new Date(year, month, i);
-            renderCalendar(); // Re-render to update 'active' class
+            // Create date object for 12:00 PM (Noon) to avoid Midnight edge cases completely
+            selectedDate = new Date(year, month, i, 12, 0, 0); 
+            renderCalendar(); 
             renderTasksForDate(selectedDate);
         };
 
