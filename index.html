@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dusmanta</title>
+    <title>HabitFlow</title>
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/906/906334.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -11,9 +11,9 @@
 </head>
 <body>
 
-    <div class="app-wrapper">
+    <div id="app-dashboard" class="app-wrapper">
         <header class="app-header">
-            <div class="brand"><i class="fa-solid fa-layer-group"></i> Dusmanta</div>
+            <div class="brand"><i class="fa-solid fa-layer-group"></i> HabitFlow</div>
             <div class="header-actions">
                 <button onclick="openSeriesModal()" class="btn-secondary"><i class="fa-solid fa-list-ol"></i> Add Series</button>
                 <button onclick="openModal()" class="btn-primary"><i class="fa-solid fa-plus"></i> New Task</button>
@@ -26,7 +26,6 @@
                     <h2 id="selected-date-title">Today</h2>
                     <span id="task-count" class="badge">0 Tasks</span>
                 </div>
-                
                 <div id="habit-list" class="habit-list">
                     <div class="skeleton-loader"></div>
                 </div>
@@ -42,10 +41,8 @@
                     <div class="calendar-days">
                         <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
                     </div>
-                    <div id="calendar-grid" class="calendar-grid">
-                        </div>
+                    <div id="calendar-grid" class="calendar-grid"></div>
                 </div>
-                
                 <div class="mini-stats">
                    <div class="stat-item">
                        <span class="label">Completion</span>
@@ -70,7 +67,6 @@
             <div class="input-group">
                 <label>Date (Optional)</label>
                 <input type="date" id="habit-date">
-                <small>Leave blank for Daily recurrence</small>
             </div>
             <button id="save-btn" class="btn-primary full-width">Save</button>
         </div>
@@ -83,11 +79,9 @@
                 <button onclick="closeModals()" class="close-icon"><i class="fa-solid fa-xmark"></i></button>
                 <h1> </h1>
             </div>
-            <p style="color:#666; font-size:0.9rem; margin-bottom:15px;">Generate tasks like "Class 1, Class 2..." starting from a specific date.</p>
-            
             <div class="input-group">
                 <label>Series Name Prefix</label>
-                <input type="text" id="series-name" placeholder="e.g. Class, Day, Workout">
+                <input type="text" id="series-name" placeholder="e.g. Class, Day">
             </div>
             <div class="input-group">
                 <label>Start Date</label>
@@ -95,9 +89,8 @@
             </div>
             <div class="input-group">
                 <label>Number of Days</label>
-                <input type="number" id="series-count" value="30" min="1" max="100">
+                <input type="number" id="series-count" value="30">
             </div>
-
             <button id="save-series-btn" class="btn-primary full-width">Generate Series</button>
         </div>
     </div>
