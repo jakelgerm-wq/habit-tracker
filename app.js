@@ -1,43 +1,161 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbwqYwd1r5B47SvgQo4g2rsdhs09OmTz4PZXHAl-qbisUBD9LRxwJhy96OSYg-ypStTCxw/exec"; // <--- PASTE YOUR API URL
-const USER_ID = "demo_user";
+const API_URL = "https://script.google.com/macros/s/AKfycby0YyZ22pASVXX_5IIdymwUwS5xZHIGFVyT3Ukby_Vp3EyWbVdWNNo0SLCeCfQ3TlP58g/exec"; // <--- PASTE API URL
 
-// State
+// Global State
 let habits = [];
 let logs = [];
-let selectedDate = new Date(); // Defaults to today
-let currentCalendarMonth = new Date(); // For navigating months
+let selectedDate = new Date();
+let currentCalendarMonth = new Date();
 
-// DOM Elements
-const habitList = document.getElementById('habit-list');
-const selectedDateTitle = document.getElementById('selected-date-title');
-const taskCountLabel = document.getElementById('task-count');
-const calendarGrid = document.getElementById('calendar-grid');
-const monthYearLabel = document.getElementById('month-year');
+// --- 1. INITIALIZATION (INSTANT LOAD) ---
 
-// Initialization
 window.addEventListener('DOMContentLoaded', () => {
-    // Set default date inputs to today
+    // 1. Load from Local Memory IMMEDIATELY
+    loadFromCache();
+    
+    // 2. Render UI immediately (Users sees data in 0.01s)
     document.getElementById('series-start-date').valueAsDate = new Date();
-    fetchData();
+    renderCalendar();
+    renderTasksForDate(selectedDate);
+    
+    // 3. Sync with Google in Background (User doesn't wait)
+    syncData(); 
 });
 
-// --- API & DATA ---
-
-async function fetchData() {
-    try {
-        const res = await fetch(API_URL, {
-            method: 'POST', body: JSON.stringify({ action: 'GET_DATA' })
-        });
-        const data = await res.json();
-        habits = data.habits;
-        logs = data.logs;
-        
-        renderCalendar();
-        renderTasksForDate(selectedDate);
-    } catch (e) { console.error(e); }
+// Load data from browser storage
+function loadFromCache() {
+    const cachedHabits = localStorage.getItem('myHabits');
+    const cachedLogs = localStorage.getItem('myLogs');
+    if (cachedHabits) habits = JSON.parse(cachedHabits);
+    if (cachedLogs) logs = JSON.parse(cachedLogs);
 }
 
-// HELPER: Format Date as YYYY-MM-DD using LOCAL time (not UTC)
+// Save data to browser storage
+function saveToCache() {
+    localStorage.setItem('myHabits', JSON.stringify(habits));
+    localStorage.setItem('myLogs', JSON.stringify(logs));
+}
+
+// Fetch fresh data from Google
+async function syncData() {
+    try {
+        const res = await fetch(API_URL, {
+            method: 'POST', 
+            body: JSON.stringify({ action: 'GET_DATA' })
+        });
+        const data = await res.json();
+        
+        // Update state and cache
+        habits = data.habits;
+        logs = data.logs;
+        saveToCache();
+        
+        // Re-render to ensure accuracy
+        renderCalendar();
+        renderTasksForDate(selectedDate);
+    } catch (e) { console.error("Sync failed", e); }
+}
+
+
+// --- 2. INSTANT SAVE ACTIONS (OPTIMISTIC UI) ---
+
+// A. New Task
+document.getElementById('save-btn').onclick = () => {
+    const name = document.getElementById('habit-name').value;
+    const dateInput = document.getElementById('habit-date').value; 
+    
+    if(!name) return alert("Enter name");
+
+    // 1. Update LOCAL
+    const newId = generateUUID();
+    const newHabit = {
+        id: newId,
+        name: name,
+        freq: dateInput ? 'Specific' : 'Daily',
+        targetDate: dateInput || null
+    };
+    
+    habits.push(newHabit);
+    saveToCache(); // Save to memory
+    closeModals();
+    renderTasksForDate(selectedDate); // Show on screen NOW
+
+    // 2. Send to Google (Background)
+    fetch(API_URL, { 
+        method: 'POST', 
+        body: JSON.stringify({
+            action: 'ADD_HABIT',
+            id: newId,
+            name: name,
+            frequency: newHabit.freq,
+            targetDate: newHabit.targetDate || ''
+        })
+    });
+};
+
+// B. Series Task
+document.getElementById('save-series-btn').onclick = () => {
+    const prefix = document.getElementById('series-name').value;
+    const startStr = document.getElementById('series-start-date').value;
+    const count = parseInt(document.getElementById('series-count').value);
+
+    if(!prefix || !startStr) return alert("Fill all fields");
+
+    closeModals(); // Close immediately
+
+    // 1. Generate Local Items
+    const items = [];
+    const parts = startStr.split('-');
+    const year = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1;
+    const day = parseInt(parts[2]);
+
+    let currentDate = new Date(year, month, day, 12, 0, 0); // Noon logic
+
+    for(let i = 1; i <= count; i++) {
+        const localId = generateUUID();
+        const dateString = getLocalDateString(currentDate);
+        
+        const item = { id: localId, name: `${prefix} ${i}`, targetDate: dateString, freq: 'Specific' };
+        
+        // Add to local state
+        habits.push(item);
+        // Prepare for server
+        items.push({ id: localId, name: item.name, targetDate: dateString });
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // 2. Render NOW
+    saveToCache();
+    renderCalendar();
+    renderTasksForDate(selectedDate);
+
+    // 3. Sync Background
+    fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'BATCH_ADD', items: items })
+    });
+};
+
+// C. Toggle Check
+window.toggleHabit = (id, dateStr, isDone) => {
+    if(isDone) return;
+    
+    // Update Local
+    logs.push({ habitId: id, date: dateStr });
+    saveToCache();
+    renderTasksForDate(selectedDate); // Instant checkmark
+
+    // Send Background
+    fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'LOG_HABIT', habitId: id, date: dateStr })
+    });
+};
+
+
+// --- 3. RENDERING & UTILS (Same as before) ---
+
 function getLocalDateString(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -45,13 +163,12 @@ function getLocalDateString(date) {
     return `${year}-${month}-${day}`;
 }
 
-// --- RENDER LOGIC ---
-
 function renderTasksForDate(dateObj) {
-    // FIX: Use local date string instead of toISOString()
     const dateStr = getLocalDateString(dateObj);
-    
-    // Update Title
+    const selectedDateTitle = document.getElementById('selected-date-title');
+    const habitList = document.getElementById('habit-list');
+    const taskCountLabel = document.getElementById('task-count');
+
     const todayStr = getLocalDateString(new Date());
     if (dateStr === todayStr) selectedDateTitle.innerText = "Today's Tasks";
     else selectedDateTitle.innerText = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
@@ -65,7 +182,6 @@ function renderTasksForDate(dateObj) {
 
     taskCountLabel.innerText = `${dailyHabits.length} Tasks`;
 
-    // Stats Calculation
     const completedCount = dailyHabits.filter(h => 
         logs.some(l => l.habitId === h.id && l.date.substring(0,10) === dateStr)
     ).length;
@@ -99,6 +215,8 @@ function renderTasksForDate(dateObj) {
 }
 
 function renderCalendar() {
+    const calendarGrid = document.getElementById('calendar-grid');
+    const monthYearLabel = document.getElementById('month-year');
     calendarGrid.innerHTML = '';
     
     const year = currentCalendarMonth.getFullYear();
@@ -109,7 +227,6 @@ function renderCalendar() {
     const firstDayIndex = new Date(year, month, 1).getDay();
     const lastDay = new Date(year, month + 1, 0).getDate();
 
-    // Empty slots
     for (let i = 0; i < firstDayIndex; i++) {
         calendarGrid.appendChild(document.createElement('div'));
     }
@@ -121,24 +238,19 @@ function renderCalendar() {
         const div = document.createElement('div');
         div.className = 'day-cell';
         div.innerText = i;
-
-        // FIX: Manually build string to avoid Timezone shifts
-        // Note: Months are 0-indexed in JS (0 = Jan), but 1-indexed in strings (01 = Jan)
+        
         const loopDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
 
         if (loopDateStr === todayStr) div.classList.add('today');
         if (loopDateStr === selectedStr) div.classList.add('active');
 
-        // Dot indicator logic
-        const hasTasks = habits.some(h => h.targetDate === loopDateStr);
-        if (hasTasks) {
+        if (habits.some(h => h.targetDate === loopDateStr)) {
             const dot = document.createElement('div');
             dot.className = 'day-dot';
             div.appendChild(dot);
         }
 
         div.onclick = () => {
-            // Create date object for 12:00 PM (Noon) to avoid Midnight edge cases completely
             selectedDate = new Date(year, month, i, 12, 0, 0); 
             renderCalendar(); 
             renderTasksForDate(selectedDate);
@@ -148,89 +260,18 @@ function renderCalendar() {
     }
 }
 
-// --- ACTIONS ---
-
-// 1. Toggle Check
-window.toggleHabit = async (id, dateStr, isDone) => {
-    if(isDone) return;
-    
-    logs.push({ habitId: id, date: dateStr });
-    renderTasksForDate(selectedDate); // Optimistic update
-
-    await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'LOG_HABIT', habitId: id, date: dateStr })
+// Helpers
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
     });
-};
+}
 
-// 2. Create Single Task
-document.getElementById('save-btn').onclick = async () => {
-    const name = document.getElementById('habit-name').value;
-    const dateInput = document.getElementById('habit-date').value; // YYYY-MM-DD
-    
-    if(!name) return alert("Enter name");
-
-    const payload = {
-        action: 'ADD_HABIT',
-        userId: USER_ID,
-        name: name,
-        frequency: dateInput ? 'Specific' : 'Daily',
-        targetDate: dateInput || ''
-    };
-
-    closeModals();
-    await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-    fetchData(); // Refresh all
-};
-
-// 3. Create SERIES (Class 1...29)
-document.getElementById('save-series-btn').onclick = async () => {
-    const prefix = document.getElementById('series-name').value;
-    const startStr = document.getElementById('series-start-date').value;
-    const count = parseInt(document.getElementById('series-count').value);
-
-    if(!prefix || !startStr) return alert("Fill all fields");
-
-    const btn = document.getElementById('save-series-btn');
-    btn.innerText = "Generating...";
-    
-    // Generate the array of habits
-    const items = [];
-    let currentDate = new Date(startStr);
-
-    for(let i = 1; i <= count; i++) {
-        items.push({
-            name: `${prefix} ${i}`,
-            targetDate: currentDate.toISOString().split('T')[0]
-        });
-        // Add 1 day
-        currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    try {
-        await fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'BATCH_ADD',
-                userId: USER_ID,
-                items: items
-            })
-        });
-        alert(`Successfully created ${count} tasks!`);
-        fetchData();
-    } catch(e) {
-        alert("Error creating series");
-    }
-    
-    closeModals();
-    btn.innerText = "Generate Series";
-};
-
-// --- HELPERS ---
-function changeMonth(dir) {
+window.changeMonth = (dir) => {
     currentCalendarMonth.setMonth(currentCalendarMonth.getMonth() + dir);
     renderCalendar();
-}
+};
 
 window.openModal = () => document.getElementById('modal').classList.remove('hidden');
 window.openSeriesModal = () => document.getElementById('series-modal').classList.remove('hidden');
